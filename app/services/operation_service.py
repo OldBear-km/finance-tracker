@@ -4,40 +4,25 @@ from decimal import Decimal
 from typing import List, Optional
 
 from app.db.database import get_db_connection
-from app.models.operation import Operation
-from app.services.account_service import AccountService
-from app.services.category_service import CategoryService # Импортируем, чтобы получить тип операции
+from app.models.operation import Operation, OperationType
 
 class OperationService:
-    """Сервис для управления финансовыми операциями с использованием БД."""
 
-    def __init__(self, account_service: AccountService, category_service: CategoryService):
-        self.account_service = account_service
-        self.category_service = category_service
-
-    def create_operation(
+    def add_operation(
         self, 
-        amount: str, 
-        operation_date: date, 
-        category_id: int, 
+        amount: float, 
+        description: str, 
         account_id: int, 
-        notes: str = ""
+        category_id: int, 
+        operation_type: OperationType, 
+        operation_date: date = date.today()
     ) -> Optional[Operation]:
-        """Создает новую операцию, используя транзакцию для обновления баланса и записи операции."""
-        # 1. Получаем категорию, чтобы узнать тип операции (доход/расход)
-        category = next((cat for cat in self.category_service.get_all_categories() if cat.id == category_id), None)
-        if not category:
-            print(f"Ошибка: Категория с ID {category_id} не найдена.")
-            return None
-
         conn = get_db_connection()
         cursor = conn.cursor()
 
         try:
-            # 2. Начинаем транзакцию
             cursor.execute("BEGIN TRANSACTION")
 
-            # 3. Получаем текущий баланс счета
             cursor.execute("SELECT balance FROM accounts WHERE id = ?", (account_id,))
             row = cursor.fetchone()
             if not row:
@@ -46,43 +31,51 @@ class OperationService:
             current_balance = Decimal(row['balance'])
             operation_amount = Decimal(amount)
 
-            # 4. Вычисляем новый баланс в зависимости от типа операции
-            if category.operation_type.value == 'expense':
+            if operation_type == OperationType.EXPENSE:
                 new_balance = current_balance - operation_amount
-            elif category.operation_type.value == 'income':
+            elif operation_type == OperationType.INCOME:
                 new_balance = current_balance + operation_amount
-            else: # transfer
-                # TODO: Логика для переводов будет сложнее
-                raise NotImplementedError("Переводы пока не поддерживаются.")
 
-            # 5. Обновляем баланс счета
             cursor.execute("UPDATE accounts SET balance = ? WHERE id = ?", (str(new_balance), account_id))
 
-            # 6. Создаем запись об операции
             cursor.execute(
-                "INSERT INTO operations (amount, operation_date, category_id, account_id, notes) VALUES (?, ?, ?, ?, ?)",
-                (amount, operation_date.isoformat(), category_id, account_id, notes)
+                "INSERT INTO operations (amount, operation_type, operation_date, category_id, account_id, notes) VALUES (?, ?, ?, ?, ?, ?)",
+                (str(amount), operation_type.value, operation_date.isoformat(), category_id, account_id, description)
             )
             new_op_id = cursor.lastrowid
 
-            # 7. Завершаем транзакцию
             conn.commit()
 
-            print(f"Операция (ID: {new_op_id}) успешно создана. Новый баланс счета {account_id}: {new_balance:.2f}")
-            return Operation(id=new_op_id, amount=operation_amount, operation_date=operation_date, category_id=category_id, account_id=account_id, notes=notes)
+            return Operation(
+                id=new_op_id, 
+                amount=operation_amount, 
+                operation_type=operation_type, 
+                operation_date=operation_date, 
+                category_id=category_id, 
+                account_id=account_id, 
+                notes=description
+            )
 
-        except (ValueError, sqlite3.Error) as e:
-            print(f"Ошибка транзакции: {e}. Откат изменений.")
+        except Exception as e:
             conn.rollback()
-            return None
+            raise e
         finally:
             conn.close()
 
-    def get_operations_by_account(self, account_id: int) -> List[Operation]:
-        """Возвращает все операции для счета из БД."""
+    def get_all_operations(self) -> List[Operation]:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM operations WHERE account_id = ? ORDER BY operation_date DESC", (account_id,))
+        cursor.execute("SELECT * FROM operations ORDER BY operation_date DESC")
         rows = cursor.fetchall()
         conn.close()
-        return [Operation(**dict(row)) for row in rows]
+        return [
+            Operation(
+                id=row['id'],
+                amount=Decimal(row['amount']),
+                operation_type=OperationType(row['operation_type']),
+                operation_date=date.fromisoformat(row['operation_date']),
+                category_id=row['category_id'],
+                account_id=row['account_id'],
+                notes=row['notes']
+            ) for row in rows
+        ]

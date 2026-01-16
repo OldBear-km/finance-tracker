@@ -89,7 +89,7 @@ class FinanceApp(tk.Tk):
         for i in self.operations_tree.get_children():
             self.operations_tree.delete(i)
         for op in self.operation_service.get_all_operations():
-            self.operations_tree.insert("", "end", values=(op.id, op.date, op.operation_type.value, op.amount, op.description, op.account_id, op.category_id))
+            self.operations_tree.insert("", "end", values=(op.id, op.operation_date, op.operation_type.value, op.amount, op.notes, op.account_id, op.category_id))
 
     def refresh_comboboxes(self):
         accounts = self.account_service.get_all_accounts()
@@ -126,6 +126,8 @@ class FinanceApp(tk.Tk):
         self.refresh_comboboxes()
 
 if __name__ == "__main__":
+    from app.db.database import create_tables
+    create_tables()
     account_service = AccountService()
     category_service = CategoryService()
     operation_service = OperationService()

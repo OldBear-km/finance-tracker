@@ -28,8 +28,7 @@ def create_tables():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            operation_type TEXT NOT NULL CHECK(operation_type IN ('income', 'expense', 'transfer'))
+            name TEXT NOT NULL UNIQUE
         );
     """)
 
@@ -38,6 +37,7 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS operations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             amount TEXT NOT NULL,
+            operation_type TEXT NOT NULL CHECK(operation_type IN ('income', 'expense')),
             operation_date TEXT NOT NULL,
             category_id INTEGER NOT NULL,
             account_id INTEGER NOT NULL,
